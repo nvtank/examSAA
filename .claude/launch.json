@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "cloud-exam-pro", "runtimeExecutable": "npm", "runtimeArgs": ["run", "start", "--", "-p", "3100"], "port": 3100 }
+  ]
+}

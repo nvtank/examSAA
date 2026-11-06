@@ -1,0 +1,181 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --color-ink: #1c1917;
+  --shadow-card: 0 1px 2px rgb(28 25 23 / 0.04), 0 8px 24px -12px rgb(28 25 23 / 0.10);
+  --shadow-pop: 0 2px 4px rgb(234 88 12 / 0.10), 0 16px 40px -16px rgb(234 88 12 / 0.35);
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background: #ffffff;
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+  background-image:
+    radial-gradient(900px 420px at 85% -120px, rgb(255 237 213 / 0.9), transparent 70%),
+    radial-gradient(700px 360px at -5% -80px, rgb(255 247 237 / 1), transparent 70%);
+  background-repeat: no-repeat;
+}
+
+::selection {
+  background: #fed7aa;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-stone-200 bg-white shadow-card;
+  }
+  .btn {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:cursor-not-allowed disabled:opacity-50 bg-orange-500 text-white shadow-sm hover:bg-orange-600 active:bg-orange-700;
+  }
+  .btn-ghost {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:cursor-not-allowed disabled:opacity-50 border border-stone-200 bg-white text-stone-700 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700;
+  }
+  .btn-soft {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:cursor-not-allowed disabled:opacity-50 bg-orange-50 text-orange-700 hover:bg-orange-100;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-stone-200 bg-stone-50 px-2.5 py-0.5 text-xs font-medium text-stone-600;
+  }
+  .label {
+    @apply text-xs font-semibold uppercase tracking-wider text-stone-500;
+  }
+}
+
+/* ---------- Markdown ---------- */
+.md {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: #292524;
+  overflow-wrap: anywhere;
+}
+.md > *:first-child {
+  margin-top: 0;
+}
+.md > *:last-child {
+  margin-bottom: 0;
+}
+.md p {
+  margin: 0.6em 0;
+}
+.md ul,
+.md ol {
+  margin: 0.6em 0;
+  padding-left: 1.4em;
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md li {
+  margin: 0.25em 0;
+}
+.md li::marker {
+  color: #fb923c;
+}
+.md strong {
+  font-weight: 650;
+  color: #1c1917;
+}
+.md a {
+  color: #c2410c;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fed7aa;
+  padding: 0.1em 0.35em;
+  border-radius: 6px;
+}
+.md pre {
+  margin: 0.8em 0;
+  padding: 0.9rem 1rem;
+  background: #1c1917;
+  color: #fafaf9;
+  border-radius: 12px;
+  overflow-x: auto;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.md pre code {
+  background: none;
+  border: 0;
+  color: inherit;
+  padding: 0;
+}
+.md blockquote {
+  margin: 0.8em 0;
+  padding: 0.4em 1em;
+  border-left: 3px solid #fdba74;
+  background: #fffaf5;
+  border-radius: 0 10px 10px 0;
+  color: #44403c;
+}
+.md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 0.88rem;
+  display: block;
+  overflow-x: auto;
+}
+.md th,
+.md td {
+  border: 1px solid #e7e5e4;
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+.md th {
+  background: #fff7ed;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  font-weight: 700;
+  margin: 1em 0 0.4em;
+  font-size: 1rem;
+}
+
+/* ---------- Motion ---------- */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+  }
+  * {
+    scroll-behavior: auto !important;
+  }
+}

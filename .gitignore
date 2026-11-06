@@ -1,0 +1,12 @@
+node_modules
+.next
+out
+next-env.d.ts
+*.tsbuildinfo
+# --- Bí mật & dữ liệu thô: KHÔNG bao giờ commit ---
+.env
+.env.*
+!.env.example
+data-src/
+raw-bak/
+.vercel
