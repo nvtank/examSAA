@@ -98,9 +98,9 @@ body {
   color: inherit;
   border-radius: 2px;
   box-shadow: 0 1px 0 #eab308;
+  cursor: pointer;
 }
-.highlight-mode .md {
-  cursor: text;
+.md {
   user-select: text;
   -webkit-user-select: text;
 }

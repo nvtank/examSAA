@@ -106,8 +106,16 @@ test('highlights phrases across formatted nodes, handles overlaps, and keeps HTM
   ] }] };
   highlightMarkdown({ terms: ['Amazon S3', 'S3', '<script>'] })(tree);
   const marks = [];
-  const visit = (node) => { if (node.tagName === 'mark') marks.push(node.children[0].value); for (const child of node.children ?? []) visit(child); };
+  const removableTerms = [];
+  const visit = (node) => {
+    if (node.tagName === 'mark') {
+      marks.push(node.children[0].value);
+      removableTerms.push(JSON.parse(node.properties['data-highlight-terms']));
+    }
+    for (const child of node.children ?? []) visit(child);
+  };
   visit(tree);
   assert.deepEqual(marks, ['Amazon ', 'S3', '<script>']);
+  assert.deepEqual(removableTerms, [['Amazon S3'], ['Amazon S3', 'S3'], ['<script>']]);
   assert.equal(tree.children[0].children[1].type, 'element');
 });

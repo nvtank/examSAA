@@ -16,16 +16,16 @@ export function highlightMarkdown(options: { terms: string[] }) {
       }
     };
     collect(tree);
-    const ranges: { start: number; end: number }[] = [];
+    const ranges: { start: number; end: number; term: string }[] = [];
     for (const term of options.terms.filter(Boolean)) {
       let start = text.indexOf(term);
       while (start !== -1) {
-        ranges.push({ start, end: start + term.length });
+        ranges.push({ start, end: start + term.length, term });
         start = text.indexOf(term, start + term.length);
       }
     }
     ranges.sort((a, b) => a.start - b.start);
-    const merged: typeof ranges = [];
+    const merged: { start: number; end: number }[] = [];
     for (const range of ranges) {
       const last = merged.at(-1);
       if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
@@ -41,7 +41,8 @@ export function highlightMarkdown(options: { terms: string[] }) {
         const start = Math.max(0, range.start - leaf.start);
         const end = Math.min(value.length, range.end - leaf.start);
         if (start > cursor) replacements.push({ type: 'text', value: value.slice(cursor, start) });
-        replacements.push({ type: 'element', tagName: 'mark', properties: { className: ['keyword-highlight'] }, children: [{ type: 'text', value: value.slice(start, end) }] });
+        const terms = [...new Set(ranges.filter((r) => r.start < leaf.start + end && r.end > leaf.start + start).map((r) => r.term))];
+        replacements.push({ type: 'element', tagName: 'mark', properties: { className: ['keyword-highlight'], 'data-highlight-terms': JSON.stringify(terms) }, children: [{ type: 'text', value: value.slice(start, end) }] });
         cursor = end;
       }
       if (cursor < value.length) replacements.push({ type: 'text', value: value.slice(cursor) });

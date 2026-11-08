@@ -22,9 +22,10 @@ import {
   type Attempt,
 } from '@/lib/storage';
 import { Markdown } from './Markdown';
+import { SelectionHighlighter } from './SelectionHighlighter';
 import { ExplanationPanel } from './ExplanationPanel';
 import { Logo } from './AppHeader';
-import { IconArrowL, IconArrowR, IconCheck, IconClock, IconFlag, IconX } from './Icons';
+import { IconArrowL, IconArrowR, IconCheck, IconClock, IconFlag, IconGrid, IconX } from './Icons';
 
 const fmt = (sec: number) => {
   const s = Math.max(0, Math.floor(sec));
@@ -39,9 +40,8 @@ export function SessionRunner() {
   const [ready, setReady] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [confirm, setConfirm] = useState<null | 'submit' | 'quit'>(null);
-  const [highlightMode, setHighlightMode] = useState(false);
-  const [selectedText, setSelectedText] = useState('');
-  const questionRef = useRef<HTMLDivElement>(null);
+  const navDialog = useRef<HTMLDialogElement>(null);
+  const answerClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [summary, setSummary] = useState<null | { correct: number; checked: number; total: number; byDomain: Record<string, { total: number; correct: number }> }>(null);
@@ -72,6 +72,17 @@ export function SessionRunner() {
   const remaining = act ? remainingSeconds(act, now) : 0;
   const elapsed = act ? Math.floor(elapsedMs(act, now) / 1000) : 0;
 
+  useEffect(() => () => {
+    if (answerClickTimer.current) clearTimeout(answerClickTimer.current);
+  }, [q?.id]);
+
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const closeMobileNav = () => { if (desktop.matches) navDialog.current?.close(); };
+    desktop.addEventListener('change', closeMobileNav);
+    return () => desktop.removeEventListener('change', closeMobileNav);
+  }, []);
+
   const pauseExam = useCallback(() => {
     if (!act || act.mode !== 'exam' || busy || submitting.current) return false;
     const at = Date.now();
@@ -81,7 +92,7 @@ export function SessionRunner() {
     setNow(at);
     setAct(next);
     setConfirm(null);
-    setSelectedText('');
+    if (answerClickTimer.current) clearTimeout(answerClickTimer.current);
     window.getSelection()?.removeAllRanges();
     return true;
   }, [act, busy]);
@@ -100,7 +111,8 @@ export function SessionRunner() {
     (i: number) => {
       if (paused) return;
       patch((a) => ({ ...a, idx: Math.min(a.questions.length - 1, Math.max(0, i)) }));
-      setSelectedText('');
+      if (answerClickTimer.current) clearTimeout(answerClickTimer.current);
+      navDialog.current?.close();
       window.getSelection()?.removeAllRanges();
       topRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     },
@@ -128,7 +140,7 @@ export function SessionRunner() {
 
   const pick = useCallback(
     (k: string) => {
-      if (!act || !q || paused || highlightMode || window.getSelection()?.toString().trim()) return;
+      if (!act || !q || paused || window.getSelection()?.toString().trim()) return;
       if (act.checked[q.id]) return; // đã khóa sau khi xem đáp án
       const cur = act.answers[q.id] ?? [];
       let next: string[];
@@ -139,7 +151,7 @@ export function SessionRunner() {
       patch((a) => ({ ...a, answers: { ...a.answers, [q.id]: next } }));
       if (!isExam && q.choose === 1) void check(q.id, next);
     },
-    [act, q, isExam, patch, check, highlightMode, paused],
+    [act, q, isExam, patch, check, paused],
   );
 
   const toggleFlag = useCallback(() => {
@@ -235,34 +247,15 @@ export function SessionRunner() {
       if (key === 'arrowright') goto(act.idx + 1);
       else if (key === 'arrowleft') goto(act.idx - 1);
       else if (key === 'f' && !e.shiftKey) toggleFlag();
-      else if (key === 'enter' && !highlightMode && !isExam && q.choose > 1) void check(q.id, act.answers[q.id] ?? []);
-      else if (!highlightMode) {
+      else if (key === 'enter' && !isExam && q.choose > 1) void check(q.id, act.answers[q.id] ?? []);
+      else {
         const opt = q.options.find((o) => o.k.toLowerCase() === key) ?? q.options[Number(key) - 1];
         if (opt) pick(opt.k);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [act, q, confirm, summary, isExam, goto, toggleFlag, check, pick, highlightMode, paused]);
-
-  useEffect(() => {
-    if (!highlightMode || paused) return;
-    const onSelection = () => {
-      const selection = window.getSelection();
-      const root = questionRef.current;
-      if (!selection || !root || selection.isCollapsed || !root.contains(selection.anchorNode) || !root.contains(selection.focusNode)) {
-        setSelectedText('');
-        return;
-      }
-      const start = selection.anchorNode?.parentElement?.closest('.md');
-      const end = selection.focusNode?.parentElement?.closest('.md');
-      if (!start || start !== end) { setSelectedText(''); return; }
-      const text = selection.toString().trim();
-      setSelectedText(text.length <= 500 ? text : '');
-    };
-    document.addEventListener('selectionchange', onSelection);
-    return () => document.removeEventListener('selectionchange', onSelection);
-  }, [highlightMode, q?.id, paused]);
+  }, [act, q, confirm, summary, isExam, goto, toggleFlag, check, pick, paused]);
 
   const stats = useMemo(() => {
     if (!act) return { answered: 0, flagged: 0, checked: 0, correct: 0 };
@@ -305,6 +298,42 @@ export function SessionRunner() {
       </main>
     );
   }
+
+  const questionNavigation = (
+    <section className="card p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-bold">Danh sách câu hỏi</h2>
+        <span className="text-xs text-stone-500">{stats.answered}/{total}</span>
+      </div>
+      <nav aria-label="Chuyển câu hỏi" className="grid max-h-[60dvh] grid-cols-5 gap-2 overflow-y-auto overscroll-contain p-1">
+        {act.questions.map((question, index) => {
+          const answered = (act.answers[question.id] ?? []).length > 0;
+          const result = isExam ? undefined : act.checked[question.id];
+          const marked = act.flags.includes(question.id);
+          const current = index === act.idx;
+          const status = result ? (result.ok ? 'đúng' : 'sai') : answered ? 'đã chọn đáp án' : 'chưa làm';
+          const color = result
+            ? result.ok ? 'border-green-300 bg-green-50 text-green-800' : 'border-red-300 bg-red-50 text-red-800'
+            : answered ? 'border-orange-300 bg-orange-100 text-orange-900' : 'border-stone-200 bg-white text-stone-600';
+          return <button key={question.id} onClick={() => goto(index)}
+            aria-label={`Câu ${index + 1}, ${status}${marked ? ', đã đánh dấu' : ''}`} aria-current={current ? 'step' : undefined}
+            className={`relative flex h-10 items-center justify-center rounded-lg border text-sm font-semibold transition hover:border-orange-400 focus-visible:outline-2 focus-visible:outline-orange-500 ${color} ${current ? 'ring-2 ring-orange-500 ring-offset-1' : ''}`}>
+            {index + 1}
+            {marked && <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-white bg-orange-500" />}
+          </button>;
+        })}
+      </nav>
+      <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 text-[11px] text-stone-500">
+        <span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm border border-stone-300 bg-white" />Chưa làm</span>
+        <span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-orange-200" />Đã chọn</span>
+        <span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-orange-500" />Đánh dấu</span>
+        {!isExam && <>
+          <span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-green-200" />Đúng</span>
+          <span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-red-200" />Sai</span>
+        </>}
+      </div>
+    </section>
+  );
 
   const highlights = act.highlights?.[q.id] ?? [];
 
@@ -351,8 +380,11 @@ export function SessionRunner() {
       </header>
 
       <div ref={topRef} className="scroll-mt-20" />
-      <div className="mx-auto max-w-4xl px-4 pb-28 pt-6 sm:px-6">
-        <main>
+      <div className="mx-auto grid max-w-6xl items-start gap-6 px-4 pb-28 pt-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <main className="min-w-0">
+          <button className="btn-ghost mb-4 w-full lg:hidden" onClick={() => navDialog.current?.showModal()} aria-haspopup="dialog">
+            <IconGrid width={16} height={16} /> Danh sách câu hỏi
+          </button>
           <article className="card rise p-5 sm:p-8" key={q.id}>
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-lg bg-orange-500 px-2.5 py-1 text-xs font-bold text-white">Câu {act.idx + 1}</span>
@@ -369,26 +401,12 @@ export function SessionRunner() {
               </button>
             </div>
 
-            <div className="mt-5 flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-3">
-              <button className={highlightMode ? 'btn-soft' : 'btn-ghost'} aria-pressed={highlightMode}
-                onClick={() => { setHighlightMode((v) => !v); setSelectedText(''); window.getSelection()?.removeAllRanges(); }}>
-                <span aria-hidden="true">🖍</span> {highlightMode ? 'Đang tô sáng' : 'Tô sáng từ khóa'}
-              </button>
-              {highlightMode && <button className="btn-primary" disabled={!selectedText}
-                onPointerDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  if (!selectedText) return;
-                  patch((a) => ({ ...a, highlights: { ...a.highlights, [q.id]: [...new Set([...(a.highlights?.[q.id] ?? []), selectedText])] } }));
-                  window.getSelection()?.removeAllRanges();
-                  setSelectedText('');
-                }}>Tô đoạn đã chọn</button>}
-              {!!highlights.length && <button className="btn-ghost" onClick={() => patch((a) => ({ ...a, highlights: { ...a.highlights, [q.id]: [] } }))}>Xóa tô sáng</button>}
-              <p className="w-full text-xs text-stone-500" role="status">
-                {highlightMode ? 'Bôi chọn từ hoặc cụm từ trong đề và phương án, rồi bấm “Tô đoạn đã chọn”. Tắt chế độ tô sáng để trả lời.' : 'Tô sáng từ khóa được lưu theo từng câu trong phiên làm bài.'}
-              </p>
-            </div>
-
-            <div ref={questionRef} className={highlightMode ? 'highlight-mode' : ''}>
+            <SelectionHighlighter key={q.id}
+              onAdd={(text) => {
+                if (answerClickTimer.current) clearTimeout(answerClickTimer.current);
+                patch((a) => ({ ...a, highlights: { ...a.highlights, [q.id]: [...new Set([...(a.highlights?.[q.id] ?? []), text])] } }));
+              }}
+              onRemove={(terms) => patch((a) => ({ ...a, highlights: { ...a.highlights, [q.id]: (a.highlights?.[q.id] ?? []).filter((text) => !terms.includes(text)) } }))}>
             <Markdown highlights={highlights} className="mt-5 !text-[16px] !leading-[1.75]">{q.text}</Markdown>
 
             <div className="mt-6 space-y-3" role={q.choose > 1 ? 'group' : 'radiogroup'} aria-label="Các phương án">
@@ -415,8 +433,15 @@ export function SessionRunner() {
                 return (
                   <button
                     key={o.k}
-                    onClick={() => pick(o.k)}
-                    aria-disabled={!!res || highlightMode}
+                    onClick={(event) => {
+                      if (answerClickTimer.current) clearTimeout(answerClickTimer.current);
+                      if (window.getSelection()?.toString().trim()) return;
+                      if (event.detail > 1) return;
+                      if (event.detail > 0 && (event.target as HTMLElement).closest('.md')) {
+                        answerClickTimer.current = setTimeout(() => pick(o.k), 350);
+                      } else pick(o.k);
+                    }}
+                    aria-disabled={!!res}
                     role={q.choose > 1 ? 'checkbox' : 'radio'}
                     aria-checked={on}
                     className={`flex w-full items-start gap-4 rounded-xl border p-4 text-left transition disabled:cursor-default ${cls}`}
@@ -430,11 +455,11 @@ export function SessionRunner() {
               })}
             </div>
 
-            </div>
+            </SelectionHighlighter>
 
             {!isExam && !res && q.choose > 1 && (
               <div className="mt-5 flex items-center gap-3">
-                <button className="btn-primary" disabled={busy || highlightMode || sel.length !== q.choose} onClick={() => check(q.id, sel)}>
+                <button className="btn-primary" disabled={busy || sel.length !== q.choose} onClick={() => check(q.id, sel)}>
                   {busy ? 'Đang kiểm tra…' : 'Kiểm tra đáp án'}
                 </button>
                 <span className="text-xs text-stone-500">
@@ -485,8 +510,20 @@ export function SessionRunner() {
             Phím tắt: A–E chọn đáp án · ← → chuyển câu · F đánh dấu{!isExam && ' · Enter kiểm tra (câu nhiều đáp án)'}
           </p>
         </main>
-
+        <aside className="sticky top-24 hidden lg:block" aria-label="Danh sách câu hỏi">{questionNavigation}</aside>
       </div>
+
+      <dialog ref={navDialog} aria-label="Danh sách câu hỏi" onKeyDown={(event) => event.stopPropagation()}
+        className="fixed inset-y-0 left-auto right-0 m-0 h-dvh max-h-none w-80 max-w-[90vw] border-0 bg-white p-4 shadow-xl backdrop:bg-stone-900/40 open:flex open:flex-col lg:hidden"
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          if (event.target === event.currentTarget && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) navDialog.current?.close();
+        }}>
+        <div className="mb-4 flex justify-end">
+          <button className="btn-ghost !px-3" onClick={() => navDialog.current?.close()} aria-label="Đóng danh sách câu hỏi"><IconX width={18} height={18} /></button>
+        </div>
+        <div className="min-h-0 overflow-y-auto">{questionNavigation}</div>
+      </dialog>
 
       {/* Nút nổi trên mobile */}
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-stone-200 bg-white/95 p-3 backdrop-blur sm:hidden">
