@@ -112,7 +112,7 @@ export function Dashboard() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[15px] font-bold tracking-tight text-stone-900">{s.title}</p>
-            <p className="mt-0.5 text-xs text-stone-500">{mode === 'exam' ? `${Math.min(65, s.count)} câu thi · rút từ ${s.count} câu đã lọc` : `${s.count} câu hỏi đã lọc`}</p>
+            <p className="mt-0.5 text-xs text-stone-500">{s.count} câu hỏi đã lọc{mode === 'exam' && ` · ${Math.ceil(EXAM_MINUTES * s.count / 65)} phút`}</p>
           </div>
           {b !== undefined && (
             <span className={`chip ${b >= PASS_PERCENT ? '!border-green-200 !bg-green-50 !text-green-700' : ''}`}>
@@ -172,9 +172,10 @@ export function Dashboard() {
       {active && (
         <section className="rise mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-orange-50/70 p-4 pl-5" style={{ animationDelay: '60ms' }}>
           <div>
-            <p className="text-sm font-bold text-orange-900">Bạn có một phiên đang làm dở</p>
+            <p className="text-sm font-bold text-orange-900">{active.pausedAt !== undefined ? 'Bài thi đang tạm dừng' : 'Bạn có một phiên đang làm dở'}</p>
             <p className="text-xs text-orange-800/80">
               {active.mode === 'exam' ? 'Thi thử' : 'Luyện tập'} · {active.title} · đã trả lời {Object.keys(active.answers).length}/{active.questions.length} câu
+              {active.pausedAt !== undefined && ' · Đồng hồ đã dừng'}
             </p>
           </div>
           <div className="flex gap-2">

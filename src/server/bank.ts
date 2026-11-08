@@ -52,17 +52,17 @@ export function getBank(): Bank {
       id: crypto.createHmac('sha256', key).update(`${s.id}:${q.n}`).digest('base64url').slice(0, 12),
     })),
   }));
-  const curated = curateSets(prepared);
+  const curated = curateSets(prepared, { deduplicate: 'set' });
   if (!curated.questions.length) throw new Error('Kho đề chưa có câu hỏi đạt kiểm tra chất lượng');
   const byId = new Map<string, Q>();
   const bySet = new Map<string, Q[]>();
   const sets: SetMeta[] = [];
   // Retain valid original IDs so saved sessions can still be checked.
   for (const s of curated.cleaned) for (const q of s.questions) byId.set(q.id, q);
-  const source = { id: 'curated', name: 'Bộ đề tổng hợp', desc: 'Gom từ các nguồn hiện có, lọc câu thiếu nội dung, gỡ dấu đáp án và loại câu trùng hoặc mâu thuẫn đáp án.' };
-  const merged = { id: 'saa-complete', source: source.id, title: 'SAA-C03 · Bộ đề đã lọc' };
-  for (const s of [merged]) {
-    const qs = curated.questions.map((q, i) => ({ ...q, n: i + 1 }));
+  const retained = new Set(curated.questions);
+  for (const s of curated.cleaned) {
+    const qs = s.questions.filter((q) => retained.has(q));
+    if (!qs.length) continue;
     const domains: Record<Domain, number> = { secure: 0, resilient: 0, performance: 0, cost: 0, other: 0 };
     for (const q of qs) {
       byId.set(q.id, q);
@@ -71,6 +71,6 @@ export function getBank(): Bank {
     bySet.set(s.id, qs);
     sets.push({ id: s.id, source: s.source, title: s.title, count: qs.length, domains });
   }
-  cache = { sources: [source], sets, byId, bySet };
+  cache = { sources: raw.sources.filter((source) => sets.some((set) => set.source === source.id)), sets, byId, bySet };
   return cache;
 }

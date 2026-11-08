@@ -32,13 +32,14 @@ const H = (x = {}) => hdr({ Cookie: cookie, 'Content-Type': 'application/json', 
 
 r = await req('/api/catalog', { headers: H() });
 const cat = await r.json();
-t('catalog chỉ có một bộ đề tổng hợp', r.status === 200 && cat.totalQuestions > 0 && cat.sources.length === 1 && cat.sources[0].sets.length === 1, `total=${cat.totalQuestions}`);
+t('catalog tách Cloud Mentor, Tutorials Dojo và Udemy', r.status === 200 && ['cloud-mentor', 'dojo', 'udemy'].every((id) => cat.sources.some((s) => s.id === id && s.sets.length > 0)) && !cat.sources.some((s) => s.id === 'curated'), `total=${cat.totalQuestions}`);
 t('catalog KHÔNG chứa câu hỏi/đáp án', !/correct|options|expl/i.test(JSON.stringify(cat)));
 
 const setId = cat.sources[0].sets[0].id;
+const setCount = cat.sources[0].sets[0].count;
 r = await post('/api/session', H(), { mode: 'practice', setId });
 const s = await r.json();
-t('tạo phiên practice từ toàn bộ kho đã lọc', r.status === 200 && s.questions.length === cat.totalQuestions, `${s.questions?.length} câu`);
+t('practice chỉ lấy câu trong bộ đề được chọn', r.status === 200 && s.questions.length === setCount && s.title.startsWith(cat.sources[0].name), `${s.questions?.length} câu`);
 t('DTO câu hỏi KHÔNG lộ đáp án', !/"correct"|"expl"|"topic"/.test(JSON.stringify(s.questions)));
 t('nội dung câu hỏi/phương án không còn nhãn đáp án đúng', !/Đáp án đúng|Correct Answer|✅|Lựa chọn của bạn/iu.test(JSON.stringify(s.questions)));
 const q0 = s.questions[0];
@@ -55,7 +56,7 @@ t('id ngoài phiên bị từ chối', r.status === 400, r.status);
 r = await post('/api/session', H(), { mode: 'exam', setId });
 const e = await r.json();
 t('exam: 160 phút', e.durationSec === 160 * 60, `${e.durationSec}s`);
-t('exam: rút 65 câu khác nhau từ kho đã lọc', e.questions.length === 65 && new Set(e.questions.map((q) => q.id)).size === 65);
+t('exam giữ nguyên bộ đề đã chọn và thứ tự khi không xáo trộn', e.questions.length === setCount && e.questions.every((q, i) => q.id === s.questions[i].id));
 t('exam: DTO không có domain', !('domain' in e.questions[0]));
 r = await post('/api/check', H(), { token: e.token, id: e.questions[0].id, sel: ['A'] });
 t('exam: /check bị từ chối (không lộ đáp án giữa chừng)', r.status === 400, r.status);
@@ -74,6 +75,14 @@ t('ngưỡng đạt: 47/65 = 72.3% -> đạt', res3.passed === true, `${res3.per
 r = await post('/api/session', H(), { mode: 'practice', mix: { count: 20, domains: ['cost'] } });
 const m = await r.json();
 t('đề trộn 20 câu domain cost', m.questions?.length === 20 && m.questions.every((x) => x.domain === 'cost'));
+
+for (const source of cat.sources.slice(1)) {
+  const set = source.sets[0];
+  const response = await post('/api/session', H(), { mode: 'practice', setId: set.id });
+  const session = await response.json();
+  const ids = new Set(s.questions.map((q) => q.id));
+  t(`${source.name}: đúng bộ đề riêng, không lẫn ID với ${cat.sources[0].name}`, response.status === 200 && session.title.startsWith(source.name) && session.questions.length === set.count && session.questions.every((q) => !ids.has(q.id)));
+}
 
 let limited = 0;
 for (let i = 0; i < 40; i++) {

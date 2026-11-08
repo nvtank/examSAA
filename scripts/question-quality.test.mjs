@@ -78,6 +78,17 @@ test('quarantines conflicting answer keys instead of picking a winner', () => {
   assert.ok(result.cleaned.every((s) => s.questions.length === 0));
 });
 
+test('per-set filtering preserves original sources, sets and cross-set copies', () => {
+  const original = [set('cm1', [question(), question({ n: 2 })]), set('dj1', [question()])];
+  original[1].source = 'dojo';
+  const result = curateSets(original, { deduplicate: 'set' });
+  const retained = new Set(result.questions);
+  const displayed = result.cleaned.map((s) => ({ ...s, questions: s.questions.filter((q) => retained.has(q)) }));
+  assert.equal(result.questions.length, 2);
+  assert.deepEqual(displayed.map((s) => [s.id, s.source, s.questions.length]), [['cm1', 'test', 1], ['dj1', 'dojo', 1]]);
+  assert.deepEqual(result.report.duplicates, [{ kept: 'cm1#1', removed: 'cm1#2' }]);
+});
+
 test('preserves questions with distinct options and is idempotent', () => {
   const original = question();
   const other = question({ n: 2, options: question().options.map((o) => ({ ...o, t: o.t + ' Modified.' })) });

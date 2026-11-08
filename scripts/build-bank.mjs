@@ -16,7 +16,7 @@ if (!original.length) {
   console.error('Không có dữ liệu nguồn trong data-src. Kho đề hiện có được giữ nguyên.');
   process.exit(1);
 }
-const curated = curateSets(original);
+const curated = curateSets(original, { deduplicate: 'set' });
 const retained = new Set(curated.questions);
 const sets = curated.cleaned.map((s) => ({ ...s, questions: s.questions.filter((q) => retained.has(q)) })).filter((s) => s.questions.length);
 fs.mkdirSync('artifacts', { recursive: true });

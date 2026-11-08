@@ -22,7 +22,7 @@ if (fs.existsSync('data-src')) {
   sets = JSON.parse(zlib.gunzipSync(data).toString('utf8')).sets;
 }
 if (!sets.length) throw new Error('Không tìm thấy bộ đề nào');
-const { report } = curateSets(sets);
+const { report } = curateSets(sets, { deduplicate: 'set' });
 for (const set of report.sets) console.log(`${set.id} · ${set.title}: ${set.total} câu, ${set.repaired.length} câu gỡ dấu đáp án, ${set.rejected.length} câu loại`);
 console.log(`Giữ ${report.retained}/${report.total} câu; ${report.duplicates.length} câu trùng; ${report.conflicts.length} nhóm mâu thuẫn đáp án.`);
 fs.mkdirSync('artifacts', { recursive: true });

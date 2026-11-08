@@ -10,7 +10,7 @@
     "build:bank": "node scripts/build-bank.mjs",
     "check:bank": "node scripts/build-bank.mjs --check",
     "audit:bank": "node scripts/audit-bank.mjs",
-    "test": "node --test scripts/question-quality.test.mjs",
+    "test": "node --test scripts/question-quality.test.mjs scripts/session-clock.test.mjs",
     "gen:secrets": "node scripts/gen-secrets.mjs"
   },
   "dependencies": {

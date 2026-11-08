@@ -82,7 +82,7 @@ export type QualityReport = {
 };
 
 /** Deduplicate by stem + unordered options; quarantine conflicting answer keys. */
-export function curateSets<T extends BankQuestion>(sets: QuestionSet<T>[]) {
+export function curateSets<T extends BankQuestion>(sets: QuestionSet<T>[], options: { deduplicate?: 'global' | 'set' } = {}) {
   const report: QualityReport = { sets: [], duplicates: [], conflicts: [], total: 0, retained: 0 };
   const groups = new Map<string, { q: T; ref: string; answer: string }[]>();
   const cleaned: QuestionSet<T>[] = [];
@@ -96,7 +96,7 @@ export function curateSets<T extends BankQuestion>(sets: QuestionSet<T>[]) {
       const reasons = questionIssues(q);
       if (reasons.length) { entry.rejected.push({ n: q.n, reasons }); continue; }
       questions.push(q);
-      const key = normalizedText(q.text) + '\u0000' + q.options.map((o) => normalizedText(o.t)).sort().join('\u0000');
+      const key = (options.deduplicate === 'set' ? set.id + '\u0000' : '') + normalizedText(q.text) + '\u0000' + q.options.map((o) => normalizedText(o.t)).sort().join('\u0000');
       const answer = q.options.filter((o) => q.correct.includes(o.k)).map((o) => normalizedText(o.t)).sort().join('\u0000');
       const group = groups.get(key) ?? [];
       group.push({ q, ref: `${set.id}#${q.n}`, answer });

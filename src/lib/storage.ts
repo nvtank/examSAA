@@ -38,6 +38,8 @@ export type Active = {
   title: string;
   durationSec: number;
   startedAt: number;
+  pausedAt?: number;
+  pausedDurationMs?: number;
   questions: QuestionDTO[];
   answers: Record<string, string[]>;
   flags: string[];

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { elapsedMs, pauseClock, remainingSeconds, resumeClock } from '@/lib/session-clock';
 import {
   DOMAIN_LABEL,
   PASS_PERCENT,
@@ -67,18 +68,43 @@ export function SessionRunner() {
 
   const q = act?.questions[act.idx];
   const isExam = act?.mode === 'exam';
-  const endAt = act && act.durationSec ? act.startedAt + act.durationSec * 1000 : 0;
-  const remaining = endAt ? Math.max(0, Math.ceil((endAt - now) / 1000)) : 0;
-  const elapsed = act ? Math.max(0, Math.floor((now - act.startedAt) / 1000)) : 0;
+  const paused = !!act && act.pausedAt !== undefined;
+  const remaining = act ? remainingSeconds(act, now) : 0;
+  const elapsed = act ? Math.floor(elapsedMs(act, now) / 1000) : 0;
+
+  const pauseExam = useCallback(() => {
+    if (!act || act.mode !== 'exam' || busy || submitting.current) return false;
+    const at = Date.now();
+    const next = pauseClock(act, at);
+    if (next.pausedAt === undefined) return false;
+    if (!saveActive(next)) { setErr('Không lưu được bài thi. Hãy kiểm tra bộ nhớ trình duyệt rồi thử lại.'); return false; }
+    setNow(at);
+    setAct(next);
+    setConfirm(null);
+    setSelectedText('');
+    window.getSelection()?.removeAllRanges();
+    return true;
+  }, [act, busy]);
+
+  const resumeExam = useCallback(() => {
+    if (!act || act.pausedAt === undefined) return;
+    const at = Date.now();
+    const next = resumeClock(act, at);
+    if (!saveActive(next)) { setErr('Không lưu được bài thi. Hãy kiểm tra bộ nhớ trình duyệt rồi thử lại.'); return; }
+    setNow(at);
+    setAct(next);
+    setErr('');
+  }, [act]);
 
   const goto = useCallback(
     (i: number) => {
+      if (paused) return;
       patch((a) => ({ ...a, idx: Math.min(a.questions.length - 1, Math.max(0, i)) }));
       setSelectedText('');
       window.getSelection()?.removeAllRanges();
       topRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     },
-    [patch],
+    [patch, paused],
   );
 
   /* ------------------------------ Luyện tập: kiểm tra ------------------------------ */
@@ -102,7 +128,7 @@ export function SessionRunner() {
 
   const pick = useCallback(
     (k: string) => {
-      if (!act || !q || highlightMode || window.getSelection()?.toString().trim()) return;
+      if (!act || !q || paused || highlightMode || window.getSelection()?.toString().trim()) return;
       if (act.checked[q.id]) return; // đã khóa sau khi xem đáp án
       const cur = act.answers[q.id] ?? [];
       let next: string[];
@@ -113,23 +139,23 @@ export function SessionRunner() {
       patch((a) => ({ ...a, answers: { ...a.answers, [q.id]: next } }));
       if (!isExam && q.choose === 1) void check(q.id, next);
     },
-    [act, q, isExam, patch, check, highlightMode],
+    [act, q, isExam, patch, check, highlightMode, paused],
   );
 
   const toggleFlag = useCallback(() => {
-    if (!q) return;
+    if (!q || paused) return;
     patch((a) => ({ ...a, flags: a.flags.includes(q.id) ? a.flags.filter((x) => x !== q.id) : [...a.flags, q.id] }));
-  }, [q, patch]);
+  }, [q, patch, paused]);
 
   /* ------------------------------ Thi thử: nộp bài ------------------------------ */
   const submitExam = useCallback(async () => {
-    if (!act || submitting.current) return;
+    if (!act || act.pausedAt !== undefined || submitting.current) return;
     submitting.current = true;
     setBusy(true);
     setErr('');
     try {
       const r = await api<SubmitResult>('/api/submit', { token: act.token, answers: act.answers });
-      const usedSec = Math.min(act.durationSec, Math.floor((Date.now() - act.startedAt) / 1000));
+      const usedSec = Math.min(act.durationSec, Math.floor(elapsedMs(act, Date.now()) / 1000));
       const attempt: Attempt = {
         id: newId(),
         at: Date.now(),
@@ -158,8 +184,8 @@ export function SessionRunner() {
 
   // tự nộp khi hết giờ
   useEffect(() => {
-    if (isExam && act && endAt && remaining === 0 && !submitting.current) void submitExam();
-  }, [isExam, act, endAt, remaining, submitExam]);
+    if (isExam && act && !paused && act.durationSec > 0 && remaining === 0 && !submitting.current) void submitExam();
+  }, [isExam, act, paused, remaining, submitExam]);
 
   /* ------------------------------ Luyện tập: kết thúc ------------------------------ */
   const finishPractice = useCallback(() => {
@@ -187,7 +213,7 @@ export function SessionRunner() {
         answered: checked,
         percent: Math.round((correct / checked) * 1000) / 10,
         passed: correct / checked >= PASS_PERCENT / 100,
-        usedSec: Math.floor((Date.now() - act.startedAt) / 1000),
+        usedSec: Math.floor(elapsedMs(act, Date.now()) / 1000),
         byDomain,
         hasReview: false,
       });
@@ -199,7 +225,7 @@ export function SessionRunner() {
 
   /* ------------------------------ Phím tắt ------------------------------ */
   useEffect(() => {
-    if (!act || !q || confirm || summary) return;
+    if (!act || !q || confirm || summary || paused) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t && (/^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(t.tagName) || t.isContentEditable)) return;
@@ -217,10 +243,10 @@ export function SessionRunner() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [act, q, confirm, summary, isExam, goto, toggleFlag, check, pick, highlightMode]);
+  }, [act, q, confirm, summary, isExam, goto, toggleFlag, check, pick, highlightMode, paused]);
 
   useEffect(() => {
-    if (!highlightMode) return;
+    if (!highlightMode || paused) return;
     const onSelection = () => {
       const selection = window.getSelection();
       const root = questionRef.current;
@@ -236,7 +262,7 @@ export function SessionRunner() {
     };
     document.addEventListener('selectionchange', onSelection);
     return () => document.removeEventListener('selectionchange', onSelection);
-  }, [highlightMode, q?.id]);
+  }, [highlightMode, q?.id, paused]);
 
   const stats = useMemo(() => {
     if (!act) return { answered: 0, flagged: 0, checked: 0, correct: 0 };
@@ -259,6 +285,26 @@ export function SessionRunner() {
   const flagged = act.flags.includes(q.id);
   const low = isExam && remaining <= 600;
   const unanswered = total - stats.answered;
+
+  if (paused) {
+    return (
+      <main className="mx-auto grid min-h-dvh max-w-lg place-items-center px-4 py-10">
+        <section className="card w-full p-6 text-center sm:p-8" aria-labelledby="paused-heading">
+          <IconClock className="mx-auto text-orange-500" width={36} height={36} />
+          <h1 id="paused-heading" className="mt-4 text-2xl font-bold">Bài thi đang tạm dừng</h1>
+          <p className="mt-2 text-sm text-stone-600">{act.title}</p>
+          <p className="mt-5 text-4xl font-bold tabular-nums text-orange-600" role="timer" aria-label="Thời gian còn lại">{fmt(remaining)}</p>
+          <p className="mt-3 text-sm text-stone-600">Đồng hồ đã dừng. Câu trả lời, đánh dấu và phần tô sáng được giữ lại, kể cả khi tải lại trang hoặc đóng trình duyệt.</p>
+          <p className="mt-3 text-xs text-stone-500">Câu {act.idx + 1}/{total} · Đã trả lời {stats.answered}/{total}</p>
+          {err && <p role="alert" className="mt-3 text-sm text-red-700">{err}</p>}
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <button className="btn-primary" onClick={resumeExam}>Tiếp tục bài thi</button>
+            <Link href="/" className="btn-ghost">Về trang chủ</Link>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   const highlights = act.highlights?.[q.id] ?? [];
 
@@ -289,6 +335,7 @@ export function SessionRunner() {
             {isExam ? fmt(remaining) : fmt(elapsed)}
           </div>
 
+          {isExam && <button className="btn-ghost !min-h-10 !px-3" onClick={pauseExam} disabled={busy}>Tạm dừng</button>}
           <button
             onClick={() => (isExam ? setConfirm('submit') : setConfirm('quit'))}
             className="btn-primary !min-h-10 hidden sm:inline-flex"
@@ -296,7 +343,7 @@ export function SessionRunner() {
             {isExam ? 'Nộp bài' : 'Kết thúc'}
           </button>
         </div>
-        {isExam && endAt > 0 && (
+        {isExam && act.durationSec > 0 && (
           <div className="h-1 w-full bg-stone-100">
             <div className={`h-full transition-all ${low ? 'bg-red-500' : 'bg-orange-500'}`} style={{ width: `${(remaining / act.durationSec) * 100}%` }} />
           </div>
@@ -479,13 +526,13 @@ export function SessionRunner() {
                 <h2 className="text-lg font-bold tracking-tight">{isExam ? 'Thoát khỏi bài thi?' : 'Kết thúc luyện tập?'}</h2>
                 <p className="mt-2 text-sm leading-relaxed text-stone-600">
                   {isExam
-                    ? 'Bài thi đang được lưu, bạn có thể quay lại làm tiếp — đồng hồ vẫn tiếp tục chạy.'
+                    ? 'Tạm dừng để lưu tiến độ và dừng đồng hồ. Bạn có thể quay lại tiếp tục bài thi từ trang chủ.'
                     : `Bạn đã kiểm tra ${stats.checked}/${total} câu${stats.checked ? ` (đúng ${stats.correct})` : ''}. Kết quả sẽ được lưu vào lịch sử.`}
                 </p>
                 <div className="mt-6 flex flex-wrap justify-end gap-2">
                   <button className="btn-ghost" onClick={() => setConfirm(null)}>Làm tiếp</button>
                   {isExam ? (
-                    <Link href="/" className="btn-primary">Về trang chủ</Link>
+                    <button className="btn-primary" disabled={busy} onClick={() => { if (pauseExam()) router.push('/'); }}>Tạm dừng & về trang chủ</button>
                   ) : (
                     <button className="btn-primary" onClick={finishPractice}>Kết thúc & lưu</button>
                   )}

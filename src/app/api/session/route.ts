@@ -40,8 +40,7 @@ export async function POST(req: Request) {
     list = [...qs].sort((a, b) => a.n - b.n);
     const src = bank.sources.find((s) => s.id === set.source);
     title = `${src?.name ?? ''} · ${set.title}`;
-    if (mode === 'exam') list = shuffle(list).slice(0, 65);
-    else if (body.shuffle === true) list = shuffle(list);
+    if (body.shuffle === true) list = shuffle(list);
   } else if (Array.isArray(body.ids)) {
     const ids = body.ids.filter((x): x is string => typeof x === 'string').slice(0, 130);
     list = ids.map((id) => bank.byId.get(id)).filter((q): q is Q => !!q);
@@ -76,7 +75,8 @@ export async function POST(req: Request) {
     ids: list.map((q) => q.id),
     t0,
     dur,
-    exp: t0 + (dur + 6 * 3600) * 1000 + 24 * 3600 * 1000,
+    // Keep a saved exam resumable on another day, including long pauses.
+    exp: t0 + 30 * 24 * 3600 * 1000,
   };
   const out: SessionStart = {
     token: sign('sess', payload),
