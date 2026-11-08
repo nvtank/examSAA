@@ -28,7 +28,9 @@ export function sign(purpose: string, payload: object): string {
 }
 
 export function verify<T extends { exp?: number }>(purpose: string, token: string | undefined | null): T | null {
-  if (!token || token.length > 8192) return null;
+  // A full practice bank carries more IDs than a 65-question exam.
+  const maxLength = purpose === 'sess' ? 65_536 : 8192;
+  if (!token || token.length > maxLength) return null;
   const i = token.lastIndexOf('.');
   if (i < 1) return null;
   const body = token.slice(0, i);

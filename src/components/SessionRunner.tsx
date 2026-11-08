@@ -23,7 +23,7 @@ import {
 import { Markdown } from './Markdown';
 import { ExplanationPanel } from './ExplanationPanel';
 import { Logo } from './AppHeader';
-import { IconArrowL, IconArrowR, IconCheck, IconClock, IconFlag, IconGrid, IconX } from './Icons';
+import { IconArrowL, IconArrowR, IconCheck, IconClock, IconFlag, IconX } from './Icons';
 
 const fmt = (sec: number) => {
   const s = Math.max(0, Math.floor(sec));
@@ -38,7 +38,9 @@ export function SessionRunner() {
   const [ready, setReady] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [confirm, setConfirm] = useState<null | 'submit' | 'quit'>(null);
-  const [navOpen, setNavOpen] = useState(false);
+  const [highlightMode, setHighlightMode] = useState(false);
+  const [selectedText, setSelectedText] = useState('');
+  const questionRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [summary, setSummary] = useState<null | { correct: number; checked: number; total: number; byDomain: Record<string, { total: number; correct: number }> }>(null);
@@ -72,7 +74,8 @@ export function SessionRunner() {
   const goto = useCallback(
     (i: number) => {
       patch((a) => ({ ...a, idx: Math.min(a.questions.length - 1, Math.max(0, i)) }));
-      setNavOpen(false);
+      setSelectedText('');
+      window.getSelection()?.removeAllRanges();
       topRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     },
     [patch],
@@ -99,7 +102,7 @@ export function SessionRunner() {
 
   const pick = useCallback(
     (k: string) => {
-      if (!act || !q) return;
+      if (!act || !q || highlightMode || window.getSelection()?.toString().trim()) return;
       if (act.checked[q.id]) return; // đã khóa sau khi xem đáp án
       const cur = act.answers[q.id] ?? [];
       let next: string[];
@@ -110,7 +113,7 @@ export function SessionRunner() {
       patch((a) => ({ ...a, answers: { ...a.answers, [q.id]: next } }));
       if (!isExam && q.choose === 1) void check(q.id, next);
     },
-    [act, q, isExam, patch, check],
+    [act, q, isExam, patch, check, highlightMode],
   );
 
   const toggleFlag = useCallback(() => {
@@ -199,21 +202,41 @@ export function SessionRunner() {
     if (!act || !q || confirm || summary) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (t && (/^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(t.tagName) || t.isContentEditable)) return;
+      if (window.getSelection()?.toString().trim()) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const key = e.key.toLowerCase();
       if (key === 'arrowright') goto(act.idx + 1);
       else if (key === 'arrowleft') goto(act.idx - 1);
-      else if (key === 'f') toggleFlag();
-      else if (key === 'enter' && !isExam && q.choose > 1) void check(q.id, act.answers[q.id] ?? []);
-      else {
+      else if (key === 'f' && !e.shiftKey) toggleFlag();
+      else if (key === 'enter' && !highlightMode && !isExam && q.choose > 1) void check(q.id, act.answers[q.id] ?? []);
+      else if (!highlightMode) {
         const opt = q.options.find((o) => o.k.toLowerCase() === key) ?? q.options[Number(key) - 1];
         if (opt) pick(opt.k);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [act, q, confirm, summary, isExam, goto, toggleFlag, check, pick]);
+  }, [act, q, confirm, summary, isExam, goto, toggleFlag, check, pick, highlightMode]);
+
+  useEffect(() => {
+    if (!highlightMode) return;
+    const onSelection = () => {
+      const selection = window.getSelection();
+      const root = questionRef.current;
+      if (!selection || !root || selection.isCollapsed || !root.contains(selection.anchorNode) || !root.contains(selection.focusNode)) {
+        setSelectedText('');
+        return;
+      }
+      const start = selection.anchorNode?.parentElement?.closest('.md');
+      const end = selection.focusNode?.parentElement?.closest('.md');
+      if (!start || start !== end) { setSelectedText(''); return; }
+      const text = selection.toString().trim();
+      setSelectedText(text.length <= 500 ? text : '');
+    };
+    document.addEventListener('selectionchange', onSelection);
+    return () => document.removeEventListener('selectionchange', onSelection);
+  }, [highlightMode, q?.id]);
 
   const stats = useMemo(() => {
     if (!act) return { answered: 0, flagged: 0, checked: 0, correct: 0 };
@@ -237,47 +260,7 @@ export function SessionRunner() {
   const low = isExam && remaining <= 600;
   const unanswered = total - stats.answered;
 
-  const navBtn = (i: number) => {
-    const qq = act.questions[i];
-    const answered = (act.answers[qq.id] ?? []).length > 0;
-    const r = act.checked[qq.id];
-    const cur = i === act.idx;
-    let cls = 'border-stone-200 bg-white text-stone-600 hover:border-orange-300';
-    if (r) cls = r.ok ? 'border-green-300 bg-green-50 text-green-800' : 'border-red-300 bg-red-50 text-red-800';
-    else if (answered) cls = 'border-orange-300 bg-orange-100 text-orange-900';
-    return (
-      <button
-        key={qq.id}
-        onClick={() => goto(i)}
-        aria-label={`Câu ${i + 1}${answered ? ', đã trả lời' : ''}${act.flags.includes(qq.id) ? ', đã đánh dấu' : ''}`}
-        aria-current={cur}
-        className={`relative flex h-9 items-center justify-center rounded-lg border text-[13px] font-semibold transition ${cls} ${
-          cur ? 'ring-2 ring-orange-500 ring-offset-1' : ''
-        }`}
-      >
-        {i + 1}
-        {act.flags.includes(qq.id) && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-orange-500" />}
-      </button>
-    );
-  };
-
-  const navPanel = (
-    <div className="card p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="label">Danh sách câu hỏi</p>
-        <p className="text-xs font-medium text-stone-500">
-          {stats.answered}/{total}
-        </p>
-      </div>
-      <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8 lg:grid-cols-5">{act.questions.map((_, i) => navBtn(i))}</div>
-      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-stone-500">
-        <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm border border-orange-300 bg-orange-100" />Đã chọn</span>
-        {!isExam && <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm border border-green-300 bg-green-50" />Đúng</span>}
-        {!isExam && <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm border border-red-300 bg-red-50" />Sai</span>}
-        <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-orange-500" />Đánh dấu</span>
-      </div>
-    </div>
-  );
+  const highlights = act.highlights?.[q.id] ?? [];
 
   return (
     <div className="min-h-dvh">
@@ -306,9 +289,6 @@ export function SessionRunner() {
             {isExam ? fmt(remaining) : fmt(elapsed)}
           </div>
 
-          <button onClick={() => setNavOpen((v) => !v)} className="btn-ghost !min-h-10 !px-3 lg:hidden" aria-label="Danh sách câu hỏi" aria-expanded={navOpen}>
-            <IconGrid width={18} height={18} />
-          </button>
           <button
             onClick={() => (isExam ? setConfirm('submit') : setConfirm('quit'))}
             className="btn-primary !min-h-10 hidden sm:inline-flex"
@@ -324,9 +304,7 @@ export function SessionRunner() {
       </header>
 
       <div ref={topRef} className="scroll-mt-20" />
-      <div className="mx-auto grid max-w-6xl gap-6 px-4 pb-28 pt-6 sm:px-6 lg:grid-cols-[1fr_300px]">
-        {navOpen && <div className="lg:hidden">{navPanel}</div>}
-
+      <div className="mx-auto max-w-4xl px-4 pb-28 pt-6 sm:px-6">
         <main>
           <article className="card rise p-5 sm:p-8" key={q.id}>
             <div className="flex flex-wrap items-center gap-2">
@@ -344,7 +322,27 @@ export function SessionRunner() {
               </button>
             </div>
 
-            <Markdown className="mt-5 !text-[16px] !leading-[1.75]">{q.text}</Markdown>
+            <div className="mt-5 flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-3">
+              <button className={highlightMode ? 'btn-soft' : 'btn-ghost'} aria-pressed={highlightMode}
+                onClick={() => { setHighlightMode((v) => !v); setSelectedText(''); window.getSelection()?.removeAllRanges(); }}>
+                <span aria-hidden="true">🖍</span> {highlightMode ? 'Đang tô sáng' : 'Tô sáng từ khóa'}
+              </button>
+              {highlightMode && <button className="btn-primary" disabled={!selectedText}
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (!selectedText) return;
+                  patch((a) => ({ ...a, highlights: { ...a.highlights, [q.id]: [...new Set([...(a.highlights?.[q.id] ?? []), selectedText])] } }));
+                  window.getSelection()?.removeAllRanges();
+                  setSelectedText('');
+                }}>Tô đoạn đã chọn</button>}
+              {!!highlights.length && <button className="btn-ghost" onClick={() => patch((a) => ({ ...a, highlights: { ...a.highlights, [q.id]: [] } }))}>Xóa tô sáng</button>}
+              <p className="w-full text-xs text-stone-500" role="status">
+                {highlightMode ? 'Bôi chọn từ hoặc cụm từ trong đề và phương án, rồi bấm “Tô đoạn đã chọn”. Tắt chế độ tô sáng để trả lời.' : 'Tô sáng từ khóa được lưu theo từng câu trong phiên làm bài.'}
+              </p>
+            </div>
+
+            <div ref={questionRef} className={highlightMode ? 'highlight-mode' : ''}>
+            <Markdown highlights={highlights} className="mt-5 !text-[16px] !leading-[1.75]">{q.text}</Markdown>
 
             <div className="mt-6 space-y-3" role={q.choose > 1 ? 'group' : 'radiogroup'} aria-label="Các phương án">
               {q.options.map((o) => {
@@ -371,7 +369,7 @@ export function SessionRunner() {
                   <button
                     key={o.k}
                     onClick={() => pick(o.k)}
-                    disabled={!!res}
+                    aria-disabled={!!res || highlightMode}
                     role={q.choose > 1 ? 'checkbox' : 'radio'}
                     aria-checked={on}
                     className={`flex w-full items-start gap-4 rounded-xl border p-4 text-left transition disabled:cursor-default ${cls}`}
@@ -379,15 +377,17 @@ export function SessionRunner() {
                     <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[13px] font-bold ${badge}`}>
                       {res && isRight ? <IconCheck width={15} height={15} strokeWidth={3} /> : isWrong ? <IconX width={15} height={15} strokeWidth={3} /> : o.k}
                     </span>
-                    <Markdown className="min-w-0 flex-1 !text-[15px]">{o.t}</Markdown>
+                    <Markdown highlights={highlights} className="min-w-0 flex-1 !text-[15px]">{o.t}</Markdown>
                   </button>
                 );
               })}
             </div>
 
+            </div>
+
             {!isExam && !res && q.choose > 1 && (
               <div className="mt-5 flex items-center gap-3">
-                <button className="btn-primary" disabled={busy || sel.length !== q.choose} onClick={() => check(q.id, sel)}>
+                <button className="btn-primary" disabled={busy || highlightMode || sel.length !== q.choose} onClick={() => check(q.id, sel)}>
                   {busy ? 'Đang kiểm tra…' : 'Kiểm tra đáp án'}
                 </button>
                 <span className="text-xs text-stone-500">
@@ -423,19 +423,22 @@ export function SessionRunner() {
               </button>
             )}
           </div>
+          <form className="mt-4 flex flex-wrap items-center justify-center gap-2" onSubmit={(e) => {
+            e.preventDefault();
+            const number = Number(new FormData(e.currentTarget).get('questionNumber'));
+            if (Number.isInteger(number) && number >= 1 && number <= total) goto(number - 1);
+          }}>
+            <label htmlFor="question-number" className="text-xs text-stone-500">Đi tới câu</label>
+            <input id="question-number" name="questionNumber" type="number" inputMode="numeric" min={1} max={total} required
+              className="h-10 w-24 rounded-xl border border-stone-200 px-3 text-sm focus:outline-orange-500" aria-label="Số câu muốn chuyển tới" />
+            <button type="submit" className="btn-ghost">Đi tới</button>
+            <span className="text-xs text-stone-500">Đã trả lời {stats.answered}/{total}</span>
+          </form>
           <p className="mt-4 hidden text-center text-xs text-stone-400 lg:block">
-            Phím tắt: A–F chọn đáp án · ← → chuyển câu · F đánh dấu{!isExam && ' · Enter kiểm tra (câu nhiều đáp án)'}
+            Phím tắt: A–E chọn đáp án · ← → chuyển câu · F đánh dấu{!isExam && ' · Enter kiểm tra (câu nhiều đáp án)'}
           </p>
         </main>
 
-        <aside className="hidden lg:block">
-          <div className="sticky top-24 space-y-4">
-            {navPanel}
-            <button className="btn-primary w-full" onClick={() => (isExam ? setConfirm('submit') : setConfirm('quit'))}>
-              {isExam ? 'Nộp bài' : 'Kết thúc luyện tập'}
-            </button>
-          </div>
-        </aside>
       </div>
 
       {/* Nút nổi trên mobile */}

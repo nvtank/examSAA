@@ -5,15 +5,27 @@ import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { loadEnvFile } from './lib/env.mjs';
 import { loadAll, validate, SOURCES } from './lib/parse.mjs';
+import { curateSets } from '../src/lib/question-quality.ts';
 
 loadEnvFile();
 const checkOnly = process.argv.includes('--check');
 
 console.log('Đang đọc data-src ...');
-const sets = loadAll('data-src');
+const original = loadAll('data-src');
+if (!original.length) {
+  console.error('Không có dữ liệu nguồn trong data-src. Kho đề hiện có được giữ nguyên.');
+  process.exit(1);
+}
+const curated = curateSets(original);
+const retained = new Set(curated.questions);
+const sets = curated.cleaned.map((s) => ({ ...s, questions: s.questions.filter((q) => retained.has(q)) })).filter((s) => s.questions.length);
+fs.mkdirSync('artifacts', { recursive: true });
+fs.writeFileSync('artifacts/bank-quality.json', JSON.stringify(curated.report, null, 2));
 const errs = validate(sets);
+if (!curated.questions.length) errs.push('Không có câu hỏi đạt kiểm tra chất lượng');
 const total = sets.reduce((a, s) => a + s.questions.length, 0);
 console.log(`  ${sets.length} bộ đề, ${total} câu hỏi, ${errs.length} lỗi`);
+console.log(`  Đã lọc ${curated.report.total - total} câu. Báo cáo: artifacts/bank-quality.json`);
 if (errs.length) {
   console.error(errs.join('\n'));
   process.exit(1);

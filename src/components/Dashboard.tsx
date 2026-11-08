@@ -112,7 +112,7 @@ export function Dashboard() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[15px] font-bold tracking-tight text-stone-900">{s.title}</p>
-            <p className="mt-0.5 text-xs text-stone-500">{s.count} câu hỏi</p>
+            <p className="mt-0.5 text-xs text-stone-500">{mode === 'exam' ? `${Math.min(65, s.count)} câu thi · rút từ ${s.count} câu đã lọc` : `${s.count} câu hỏi đã lọc`}</p>
           </div>
           {b !== undefined && (
             <span className={`chip ${b >= PASS_PERCENT ? '!border-green-200 !bg-green-50 !text-green-700' : ''}`}>

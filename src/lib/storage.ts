@@ -1,5 +1,6 @@
 // Lưu tiến độ cục bộ trên trình duyệt (localStorage). Mọi thao tác đều bọc try/catch.
 import type { CheckResult, Domain, Mode, QuestionDTO, SubmitResult } from './types';
+import { cleanOptionText, cleanQuestionText } from './question-quality';
 
 const K = {
   active: 'cep:active',
@@ -42,11 +43,15 @@ export type Active = {
   flags: string[];
   checked: Record<string, CheckResult>;
   idx: number;
+  highlights?: Record<string, string[]>;
 };
 
 export const loadActive = () => {
   const a = read<Active | null>(K.active, null);
-  return a && a.v === 1 ? a : null;
+  return a && a.v === 1 ? {
+    ...a,
+    questions: a.questions.map((q) => ({ ...q, text: cleanQuestionText(q.text), options: q.options.map((o) => ({ ...o, t: cleanOptionText(o.t) })) })),
+  } : null;
 };
 export const saveActive = (a: Active) => write(K.active, a);
 export const clearActive = () => remove(K.active);

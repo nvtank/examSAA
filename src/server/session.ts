@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import type { Q } from './bank';
 import { verify } from './crypto';
 import type { Explanation, QuestionDTO } from '@/lib/types';
+import { cleanOptionText, cleanQuestionText } from '@/lib/question-quality';
 
 export type SessPayload = {
   u: string;
@@ -33,8 +34,8 @@ export function toDTO(q: Q, withDomain: boolean): QuestionDTO {
   return {
     id: q.id,
     choose: q.choose,
-    text: q.text,
-    options: q.options.map((o) => ({ k: o.k, t: o.t })),
+    text: cleanQuestionText(q.text),
+    options: q.options.map((o) => ({ k: o.k, t: cleanOptionText(o.t) })),
     ...(withDomain ? { domain: q.domain } : {}),
   };
 }

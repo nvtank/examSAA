@@ -93,6 +93,17 @@ body {
   font-weight: 650;
   color: #1c1917;
 }
+.md mark.keyword-highlight {
+  background: #fef08a;
+  color: inherit;
+  border-radius: 2px;
+  box-shadow: 0 1px 0 #eab308;
+}
+.highlight-mode .md {
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+}
 .md a {
   color: #c2410c;
   text-decoration: underline;

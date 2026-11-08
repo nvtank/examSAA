@@ -2,6 +2,7 @@ import 'server-only';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import blob from './data/bank.enc.json';
+import { curateSets } from '@/lib/question-quality';
 
 export type Domain = 'secure' | 'resilient' | 'performance' | 'cost' | 'other';
 export type Expl = { why: string; distractors: string; tips: string; refs: string };
@@ -43,15 +44,25 @@ export function getBank(): Bank {
     sets: { source: string; id: string; title: string; questions: Omit<Q, 'id' | 'setId'>[] }[];
   };
 
-  const byId = new Map<string, Q>();
-  const bySet = new Map<string, Q[]>();
-  const sets: SetMeta[] = [];
-  for (const s of raw.sets) {
-    const qs: Q[] = s.questions.map((q) => ({
+  const prepared = raw.sets.map((s) => ({
+    ...s,
+    questions: s.questions.map((q) => ({
       ...q,
       setId: s.id,
       id: crypto.createHmac('sha256', key).update(`${s.id}:${q.n}`).digest('base64url').slice(0, 12),
-    }));
+    })),
+  }));
+  const curated = curateSets(prepared);
+  if (!curated.questions.length) throw new Error('Kho đề chưa có câu hỏi đạt kiểm tra chất lượng');
+  const byId = new Map<string, Q>();
+  const bySet = new Map<string, Q[]>();
+  const sets: SetMeta[] = [];
+  // Retain valid original IDs so saved sessions can still be checked.
+  for (const s of curated.cleaned) for (const q of s.questions) byId.set(q.id, q);
+  const source = { id: 'curated', name: 'Bộ đề tổng hợp', desc: 'Gom từ các nguồn hiện có, lọc câu thiếu nội dung, gỡ dấu đáp án và loại câu trùng hoặc mâu thuẫn đáp án.' };
+  const merged = { id: 'saa-complete', source: source.id, title: 'SAA-C03 · Bộ đề đã lọc' };
+  for (const s of [merged]) {
+    const qs = curated.questions.map((q, i) => ({ ...q, n: i + 1 }));
     const domains: Record<Domain, number> = { secure: 0, resilient: 0, performance: 0, cost: 0, other: 0 };
     for (const q of qs) {
       byId.set(q.id, q);
@@ -60,6 +71,6 @@ export function getBank(): Bank {
     bySet.set(s.id, qs);
     sets.push({ id: s.id, source: s.source, title: s.title, count: qs.length, domains });
   }
-  cache = { sources: raw.sources, sets, byId, bySet };
+  cache = { sources: [source], sets, byId, bySet };
   return cache;
 }

@@ -40,7 +40,8 @@ export async function POST(req: Request) {
     list = [...qs].sort((a, b) => a.n - b.n);
     const src = bank.sources.find((s) => s.id === set.source);
     title = `${src?.name ?? ''} · ${set.title}`;
-    if (body.shuffle === true) list = shuffle(list);
+    if (mode === 'exam') list = shuffle(list).slice(0, 65);
+    else if (body.shuffle === true) list = shuffle(list);
   } else if (Array.isArray(body.ids)) {
     const ids = body.ids.filter((x): x is string => typeof x === 'string').slice(0, 130);
     list = ids.map((id) => bank.byId.get(id)).filter((q): q is Q => !!q);
